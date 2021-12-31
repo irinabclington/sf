@@ -1,0 +1,44 @@
+public with sharing class ConvertSObjectCollectionToString {
+    @invocableMethod(label='Convert SObject Collection to String' )
+    public static List<Response> execute (List<Request> requests) {
+
+        List<Response> responseList = new List<Response>();
+        List<String> values=new List<String>();
+        String delimiter;
+        for (Request curRequest : requests) {
+            delimiter=curRequest.delimiter;
+            if(curRequest.sObjList!=null)
+            for(SObject so:curRequest.sObjList){
+                values.add(so.get(curRequest.fieldApiName).toString());   
+            }
+           
+        }
+        Response response = new Response();
+        response.outputString = String.join(values,delimiter);
+        responseList.add(response);
+        
+        return responseList;
+    }
+
+
+    public class Request {
+        @invocableVariable
+        public List<SObject> sObjList;
+        @invocableVariable
+        public String delimiter;
+         @invocableVariable
+        public String fieldApiName;
+ 
+    }
+
+    public class Response {
+
+        @invocableVariable
+        public String outputString;
+
+    }
+
+    public class InvocableActionException extends Exception {
+    }
+
+}
