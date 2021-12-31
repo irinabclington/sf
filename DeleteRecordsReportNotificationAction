@@ -1,0 +1,61 @@
+public class DeleteRecordsReportNotificationAction implements Reports.NotificationAction {
+   @TestVisible
+   private Set<Id> ids = new Set<Id>();
+   @TestVisible
+   private String sObjectType;
+   public void execute(Reports.NotificationActionContext context) {
+      Reports.ReportResults results = context.getReportInstance().getReportResults();
+      Map<String, Reports.ReportFact> facts = results.getFactMap();
+      List<Log__c> logs = new List<Log__c>();
+      Integer nrDeletedRecords = 0;
+      List<String> data = new List<String>();
+      try {
+         for (Reports.ReportFactWithDetails f : (List<Reports.ReportFactWithDetails>) facts.values()) {
+            String sObjId = f.getRows()[0].getDataCells()[0].getLabel();
+            if (sObjId instanceof Id) {
+               ids.add(sObjId);
+               if (String.isEmpty(sObjectType)) {
+                  sObjectType = ((Id) sObjId).getSObjectType().getDescribe().getName();
+               }
+            }
+            if (!String.isEmpty(sObjectType)) {
+               for (Reports.ReportDetailRow row : f.getRows()) {
+                  String dataRow = '{';
+                  for (Reports.ReportDataCell dc : row.getDataCells()) {
+                     if (dc != null && dc.getLabel() != null) {
+                        dataRow += dc?.getLabel() + ',';
+                     }
+                  }
+                  dataRow = dataRow.removeEnd(',');
+                  dataRow += '}';
+                  data.add(dataRow);
+               }
+            }
+         }
+         if (!ids.isEmpty() && !String.isEmpty(sObjectType)) {
+            List<SObject> objs = Database.query('SELECT Id FROM ' + sObjectType + ' WHERE Id in :ids');
+            List<Database.DeleteResult> deleteResults = Database.delete(objs, false);
+            for (Integer i = 0; i < deleteResults.size(); i++) {
+               Database.DeleteResult dr = deleteResults[i];
+               SObject record = objs[i];
+               if (!dr.isSuccess()) {
+                  for (Database.Error err : dr.getErrors()) {
+                     if (err.getStatusCode() != System.StatusCode.ENTITY_IS_DELETED) {
+                        logs.add(LogBuilder.anError('Delete: ' + err.getMessage(), '', DmlException.class.getName()).withRelatedObjectId(record.Id).withErrorLocation(DeleteRecordsReportNotificationAction.class.getName()).build());
+                     }
+                  }
+               } else {
+                  nrDeletedRecords++;
+               }
+            }
+         }
+      } catch (Exception ex) {
+         logs.add(LogBuilder.anError(ex.getMessage(), ex.getStackTraceString(), ex.getTypeName()).withErrorLocation(DeleteRecordsReportNotificationAction.class.getName()).build());
+      }
+      if (ids.size() == 2000) {
+         logs.add(LogBuilder.aWarning('Maximum number of records reached for report ' + results.getReportMetadata().getName() + ': ' + context.getThresholdInformation().getEvaluatedConditions()[0].getValue()).withErrorLocation(DeleteRecordsReportNotificationAction.class.getName()).build());
+      }
+      logs.add(LogBuilder.anInfo(results.getReportMetadata().getName() + 'Report Custom Action deleted ' + nrDeletedRecords + ' out of ' + facts.size()).withHttpResponseBody(String.join(data, '\n')).withErrorLocation(DeleteRecordsReportNotificationAction.class.getName()).build());
+      Database.insert(logs, false);
+   }
+}
